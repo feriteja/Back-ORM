@@ -1,5 +1,8 @@
-const pool = require("../../db.config");
+const db = require("../../db.config");
 const bcrypt = require("bcrypt");
+
+const UserModel = require("../../models/users.model");
+const credential = require("../../models/credential.model");
 
 const signUpUser = async (userName, password) => {
   try {
@@ -8,16 +11,20 @@ const signUpUser = async (userName, password) => {
     const hashPass = await bcrypt.hash(password, genSalt);
     userName.replace(/'/g, "''");
 
-    await pool.query(`INSERT INTO credential (username,password)
-    VALUES ('${userName}','${hashPass}')`);
+    const orm1 = await credential.create({
+      username: userName,
+      password: hashPass,
+    });
 
-    await pool.query(`INSERT INTO users (username) VALUES ('${userName}') `);
+    const orm2 = await UserModel.create({ username: userName });
 
-    const user = await pool.query(
-      `SELECT * FROM users WHERE username = '${userName}'`
-    );
+    const regisUser = await UserModel.findAll({
+      where: {
+        username: userName,
+      },
+    });
 
-    return user.rows[0];
+    return regisUser[0].dataValues;
   } catch (error) {
     throw error;
   }
@@ -26,21 +33,21 @@ const signUpUser = async (userName, password) => {
 const signInUser = async (username, password) => {
   try {
     username.replace(/'/g, "''");
-    const userCred = await pool.query(
-      `SELECT * FROM credential WHERE username = '${username}'`
-    );
-    if (userCred.rowCount === 0) return false;
-    const isUser = await bcrypt.compare(password, userCred.rows[0].password);
+    const userCred = await credential.findOne({ where: { username } });
+    // const userCred = await pool.query(
+    //   `SELECT * FROM credential WHERE username = '${username}'`
+    // );
+
+    if (!userCred) return false;
+    const isUser = await bcrypt.compare(password, userCred.dataValues.password);
 
     if (!isUser) {
       return false;
     }
 
-    const user = await pool.query(
-      `SELECT * FROM users WHERE username = '${username}'`
-    );
+    const user = await UserModel.findOne({ where: { username } });
 
-    return user.rows[0];
+    return user.dataValues;
   } catch (error) {
     throw error;
   }
@@ -50,8 +57,11 @@ const signOutUser = async (username) => {
   try {
     username.replace(/'/g, "''");
 
-    const res = await pool.query(
-      `UPDATE credential SET  refresh_token = null WHERE username = '${username}'`
+    const res = await credential.update(
+      { refresh_token: null },
+      {
+        where: { username },
+      }
     );
 
     return res;
@@ -67,10 +77,12 @@ const signForgot = async (username, password) => {
     const hashPass = await bcrypt.hash(password, genSalt);
     username.replace(/'/g, "''");
 
-    const res = await pool.query(
-      `UPDATE credential SET = '${hashPass}' WHERE username = '${username} `
+    const res = await credential.update(
+      { password: hashPass },
+      { where: { username } }
     );
-    return res.rowCount;
+
+    return res.dataValues;
   } catch (error) {}
 };
 

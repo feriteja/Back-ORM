@@ -1,6 +1,8 @@
 const jwt = require("jsonwebtoken");
 const dotenv = require("dotenv");
 dotenv.config();
+const pool = require("../../db.config");
+const credential = require("../../models/credential.model");
 
 const generateToken = async (data) => {
   try {
@@ -18,4 +20,19 @@ const generateToken = async (data) => {
   }
 };
 
-module.exports = { generateToken };
+const updateToken = async (refresh_token, username) => {
+  try {
+    const token = await credential.update(
+      { refresh_token },
+      {
+        where: {
+          username,
+        },
+      }
+    );
+
+    return token;
+  } catch (error) {}
+};
+
+module.exports = { generateToken, updateToken };

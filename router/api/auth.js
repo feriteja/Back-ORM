@@ -7,7 +7,10 @@ const {
   signOutUser,
   signForgot,
 } = require("../../function/handler/authHandler");
-const { generateToken } = require("../../function/handler/tokenGenerator");
+const {
+  generateToken,
+  updateToken,
+} = require("../../function/handler/tokenGenerator");
 const { checkUserExist } = require("../../function/handler/userHandler");
 const { userLog } = require("../../function/middleware/userLog");
 const { verifyUser } = require("../../function/middleware/verifyUser");
@@ -21,12 +24,10 @@ router.post(
     try {
       const { username, password } = req.body;
 
-      const user = await signUpUser(username, password);
+      const user = await signUpUser(username.toLowerCase(), password);
 
       const token = await generateToken(user);
-      await pool.query(
-        `UPDATE credential SET  refresh_token='${token.refresh_token}' WHERE username = '${username}'`
-      );
+      await updateToken(token.refresh_token, username.toLowerCase());
 
       res.status(201).json({ message: "user has been registered", token });
 
@@ -69,9 +70,7 @@ router.get("/refresh", verifyUser, async (req, res) => {
       created_at,
       state,
     });
-    await pool.query(
-      `UPDATE credential SET  refresh_token='${token.refresh_token}' WHERE username = '${username}'`
-    );
+    await updateToken(token.refresh_token, username.toLowerCase());
     return res.status(200).json({ message: "success", token });
   } catch (error) {
     res.sendStatus(401);
@@ -93,11 +92,8 @@ router.post(
         next();
         return;
       }
-
       const token = await generateToken(user);
-      await pool.query(
-        `UPDATE credential SET  refresh_token='${token.refresh_token}' WHERE username = '${username}'`
-      );
+      await updateToken(token.refresh_token, username.toLowerCase());
 
       req.activity = "signin";
       req.status = "success";

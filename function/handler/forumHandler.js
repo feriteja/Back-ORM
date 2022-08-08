@@ -1,29 +1,62 @@
-const pool = require("../../db.config");
+const sequelize = require("sequelize");
+const db = require("../../db.config");
+const forumModel = require("../../models/forum.model");
+const User = require("../../models/users.model");
+
+forumModel.belongsTo(User, { as: "owner", foreignKey: "uuid" });
 
 const getAllForums = async (category) => {
   try {
     if (category === "undefined" || category === undefined) {
-      const forum = await pool.query(
-        `
-        SELECT fuid, title, banner, content, users.username AS owner, 
-        forum.like_by, forum.created_at, category, jsonb_array_length(comment) AS comment
-                FROM users
-                JOIN forum ON  forum.owner=users.uuid
-                ORDER BY forum.created_at DESC`
-      );
-      return forum.rows;
+      const forum = await forumModel.findAll({
+        attributes: [
+          "fuid",
+          "title",
+          "content",
+          "created_at",
+          "category",
+          [sequelize.fn("COUNT", sequelize.col("forum.like_by")), "like_count"],
+        ],
+
+        include: [
+          {
+            model: User,
+            as: "owner",
+            attributes: ["username", "uuid"],
+            required: true,
+          },
+        ],
+
+        order: [["created_at", "DESC"]],
+        group: ["fuid", "owner.username", "owner.uuid"],
+      });
+
+      return forum;
     }
 
-    const forum = await pool.query(
-      `
-      SELECT fuid, title, banner, content,  users.username AS owner,
-      forum.like_by, forum.created_at, category, jsonb_array_length(comment) AS comment
-              FROM users
-              JOIN forum ON  forum.owner=users.uuid
-              WHERE category = '${category}'
-              ORDER BY forum.created_at DESC
-        `
-    );
+    const forum = await forumModel.findAll({
+      attributes: [
+        "fuid",
+        "title",
+        "content",
+        "created_at",
+        "category",
+        [sequelize.fn("COUNT", sequelize.col("forum.like_by")), "like_count"],
+      ],
+
+      include: [
+        {
+          model: User,
+          as: "owner",
+          attributes: ["username", "uuid"],
+          required: true,
+        },
+      ],
+
+      order: [["created_at", "DESC"]],
+      group: ["fuid", "owner.username", "owner.uuid"],
+      where: { category },
+    });
     return forum.rows;
   } catch (error) {
     throw error;
@@ -32,7 +65,7 @@ const getAllForums = async (category) => {
 
 const getForumPopular = async () => {
   try {
-    const res = await pool.query(`
+    const res = await db.query(`
     SELECT *, jsonb_array_length(comment) as comment,
     ARRAY_LENGTH(like_by,1) as like ,
     (coalesce(jsonb_array_length(comment),0)+coalesce(ARRAY_LENGTH(like_by,1),0))/extract(hour from f.created_at)number,
@@ -51,7 +84,7 @@ const getForumPopular = async () => {
 
 const getForumDetail = async (forumID) => {
   try {
-    const forum = await pool.query(
+    const forum = await db.query(
       `SELECT forum.*, users.username, users.alias, (
         SELECT   JSON_AGG(
         JSON_BUILD_OBJECT('id', e.cmt->>'id',
@@ -82,7 +115,7 @@ WHERE fuid = '${forumID}'`
 
 const getForumSearch = async (title) => {
   try {
-    const res = await pool.query(
+    const res = await db.query(
       `SELECT fuid, title, banner, content, users.username AS owner, 
       forum.like_by, forum.created_at, category, jsonb_array_length(comment) AS comment
               FROM users
@@ -98,7 +131,7 @@ const getForumSearch = async (title) => {
 
 const addLikeToForum = async (forumID, userID) => {
   try {
-    const res = await pool.query(`UPDATE forum 
+    const res = await db.query(`UPDATE forum 
     SET  like_by=like_by || '${userID}'::uuid
       WHERE fuid = '${forumID}'`);
     return res.rowCount;
@@ -109,7 +142,7 @@ const addLikeToForum = async (forumID, userID) => {
 
 const removeLikeToForum = async (forumID, userID) => {
   try {
-    const res = await pool.query(`UPDATE forum
+    const res = await db.query(`UPDATE forum
     SET like_by = ARRAY_REMOVE(like_by, '${userID}')
     where fuid = '${forumID}'`);
     return res.rowCount;
@@ -122,7 +155,7 @@ const addForum = async (userID, data) => {
   try {
     const content = data.content.replace(/'/g, "''");
     const title = data.title.replace(/'/g, "''");
-    const res = await pool.query(
+    const res = await db.query(
       `INSERT INTO forum (owner, title, content, category,banner) VALUES ('${userID}', '${title}','${content}','${data.category}','${data.banner}' )`
     );
     return res.rowCount;
@@ -133,7 +166,7 @@ const addForum = async (userID, data) => {
 
 const deleteForum = async (forumID) => {
   try {
-    const res = await pool.query(`DELETE FROM forum WHERE fuid='${forumID}'`);
+    const res = await db.query(`DELETE FROM forum WHERE fuid='${forumID}'`);
     if (res.rowCount === 0) return false;
     return true;
   } catch (error) {
@@ -146,13 +179,13 @@ const updateForum = async (forumID, data) => {
     const title = data?.title?.replace(/'/g, "''");
     const content = data?.content?.replace(/'/g, "''");
 
-    const forumQuery = await pool.query(
+    const forumQuery = await db.query(
       `SELECT * FROM forum WHERE fuid = '${data.forumID}'`
     );
     if (forumQuery.rowCount === 0) return forumQuery.rowCount;
     const forum = forumQuery.rows[0];
 
-    const res = await pool.query(
+    const res = await db.query(
       `UPDATE forum SET title='${title || forum.title}', content='${
         content || forum.content
       }', banner='${data.banner || forum.banner}'   WHERE fuid = '${
@@ -167,7 +200,7 @@ const updateForum = async (forumID, data) => {
 
 const commentForum = async (data, forumID) => {
   try {
-    const res = await pool.query(
+    const res = await db.query(
       `UPDATE forum SET comment= COALESCE(comment,'[]'::jsonb)|| '${data}'::jsonb  WHERE fuid = '${forumID}'`
     );
 
